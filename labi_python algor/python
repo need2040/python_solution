@@ -1,0 +1,8 @@
+numbers = []
+while True:
+     user_input = input("Введите число: ")
+     numbers.append(user_input)
+     if user_input == "":
+         break
+     
+print(numbers)
