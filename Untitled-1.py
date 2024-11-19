@@ -1,154 +1,131 @@
 # %%
-#Импорт библиотек
-import numpy as np
+# Импорт необходимых библиотек
+import warnings
 import pandas as pd
 import yfinance as yf
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from pytorch_forecasting import TimeSeriesDataSet, TemporalFusionTransformer, Baseline, GroupNormalizer
+from pytorch_forecasting.data.encoders import NaNLabelEncoder
+from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor
+from lightning.pytorch.loggers import TensorBoardLogger
+import lightning.pytorch as pl
 import torch
-import torch.nn as nn
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-import torch.optim as optim
+from pytorch_forecasting.metrics import RMSE
+from pytorch_forecasting.models import TemporalFusionTransformer
+from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
+
 
 # %%
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %%
-#Загрузка данных
+# Загрузка данных
 data = yf.download('NVDA', start='2020-01-01', end='2024-01-01')
+
+
+# %%
+data['time_idx'] = range(len(data))  # Индекс времени
 data['SMA_10'] = data['Close'].rolling(window=10).mean()
 data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['EMA_10'] = data['Close'].ewm(span=10, adjust=False).mean()
 data['Volatility'] = data['High'] - data['Low']
 data['Price_Change'] = data['Close'].diff()
-data.fillna(data.bfill(),inplace=True)
-data.fillna(data.ffill(), inplace=True)
+data.bfill(inplace=True)
+data.ffill(inplace=True)
 
 # %%
-# Подготовка признаков
-features = ['Close', 'SMA_10', 'SMA_20', 'EMA_10', 'Volatility', 'Price_Change']
-feature_scaler = MinMaxScaler()
-target_scaler = MinMaxScaler()
+data.reset_index(inplace=True)
+data.columns = data.columns.droplevel(1)
+data.drop(columns=['Date'], inplace=True)
+data["series_id"] = 0  # один уникальный идентификатор для всего ряда
 
-data[features] = feature_scaler.fit_transform(data[features])
-data['Close'] = target_scaler.fit_transform(data[['Close']])
+# %%
+data.head()
+
+# %%
+# Подготовка данных для TimeSeriesDataSet
+max_encoder_length = 60  # Длина входной последовательности
+max_prediction_length = 10  # Длина прогноза (1 шаг вперёд)
+training_cutoff = data["time_idx"].max() - max_prediction_length
+
+# %%
+# Создание TimeSeriesDataSet
+training = TimeSeriesDataSet(
+    data[lambda x: x.time_idx <= training_cutoff],
+    time_idx="time_idx",
+    target="Close",
+    group_ids=["series_id"],  # Указываем фиктивный идентификатор группы
+    min_encoder_length=max_encoder_length //2,
+    max_encoder_length=max_encoder_length,
+    min_prediction_length=max_prediction_length,
+    max_prediction_length=max_prediction_length,
+    static_categoricals=[],  # Нет категориальных данных
+    time_varying_known_reals=['SMA_10', 'SMA_20', 'EMA_10', 'Volatility', 'Price_Change'],  # Временные признаки, известные заранее
+    time_varying_unknown_reals=["Close"],  # Используем только значение закрытия
+    target_normalizer=GroupNormalizer(groups=["series_id"], transformation="softplus"),  
+    add_relative_time_idx=True,
+    add_target_scales=True,
+    add_encoder_length=True,
+)
 
 
 # %%
-# Формирование последовательностей
-sequence_length = 60
-X, y = [], []
-for i in range(len(data) - sequence_length):
-    X.append(data[features].iloc[i:i+sequence_length].values)
-    y.append(data['Close'].iloc[i+sequence_length])
-
-X = np.array(X)
-y = np.array(y)
-
+validation = TimeSeriesDataSet.from_dataset(training,data, predict=True,stop_randomization=True)
 
 # %%
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-
-# %%
-X_train = torch.tensor(X_train, dtype=torch.float32)
-X_test = torch.tensor(X_test, dtype=torch.float32)
-y_train = torch.tensor(y_train, dtype=torch.float32).view(-1, 1)
-y_test = torch.tensor(y_test, dtype=torch.float32).view(-1, 1)
-
-# %%
-class TimeSeriesTransformer(nn.Module):
-    def __init__(self, input_dim, d_model, n_heads, num_layers, dropout=0.1):
-        super(TimeSeriesTransformer, self).__init__()
-        self.embedding = nn.Linear(input_dim, d_model)
-        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=n_heads, dropout=dropout, batch_first=True)
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.fc = nn.Linear(d_model, 1)
-    
-    def forward(self, x):
-        # Входные данные: (batch_size, seq_len, input_dim)
-        x = self.embedding(x)  # (batch_size, seq_len, d_model)
-        x = x.permute(1, 0, 2)  # Перестановка для трансформера: (seq_len, batch_size, d_model)
-        x = self.transformer(x)  # (seq_len, batch_size, d_model)
-        x = x[-1]  # Используем только последнее значение (batch_size, d_model)
-        x = self.fc(x)  # (batch_size, 1)
-        return x
-
-# %%
-input_dim = X_train.shape[2]
-d_model = 256
-n_heads = 4
-num_layers = 2
-dropout = 0.2
-lr = 0.001
-epochs = 6
+#Размеры батча
 batch_size = 64
-
-model = TimeSeriesTransformer(input_dim, d_model, n_heads, num_layers, dropout)
-criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=lr)
+train_dataloader = training.to_dataloader(train=True,batch_size=batch_size,num_workers = 0)
+val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
 
 # %%
-# Обучение
-for epoch in range(epochs):
-    model.train()
-    epoch_loss = 0.0
-    for i in range(0, len(X_train), batch_size):
-        x_batch = X_train[i:i+batch_size]
-        y_batch = y_train[i:i+batch_size]
-        
-        optimizer.zero_grad()
-        predictions = model(x_batch)
-        loss = criterion(predictions, y_batch)
-        loss.backward()
-        optimizer.step()
-        
-        epoch_loss += loss.item()
-    print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss:.4f}")
-
+early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=10, verbose=False, mode="min")
+lr_logger = LearningRateMonitor()  # log the learning rate
+logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
 
 # %%
-# Оценка на тестовых данных
-model.eval()
-with torch.no_grad():
-    predictions = model(X_test)
-    test_loss = criterion(predictions, y_test)
-    print(f"Test Loss: {test_loss:.4f}")
+trainer = pl.Trainer(
+    accelerator='gpu',
+    gradient_clip_val=0.1,
+    max_epochs=20,
+    #fast_dev_run = True,
+    callbacks=[lr_logger, early_stop_callback],
+    logger=logger,
+    log_every_n_steps=5
+)
 
-
-# %%
-# Преобразование прогнозов обратно в исходный масштаб
-predicted = target_scaler.inverse_transform(predictions)
-actual = target_scaler.inverse_transform(y_test.numpy().reshape(-1,1))
-
-# Построение графика
-plt.figure(figsize=(12, 6))
-
-plt.plot(predicted, label='Predicted')
-plt.legend()
-plt.show()
-
-
-# %%
-y_train
-
-# %%
-y_test
+tft = TemporalFusionTransformer.from_dataset(
+    training,
+    # not meaningful for finding the learning rate but otherwise very important
+    learning_rate=0.03,
+    hidden_size=16,  # most important hyperparameter apart from learning rate
+    # number of attention heads. Set to up to 4 for large datasets
+    attention_head_size=2,
+    dropout=0.1,  # between 0.1 and 0.3 are good values
+    hidden_continuous_size=8,  # set to <= hidden_size
+    loss=RMSE(),
+    optimizer="ranger",
+    
+)
+print(f"Число параметров сети: {tft.size()/1e3:.1f}k")
 
 # %%
-data['Close']
+# fit network
+trainer.fit(
+    tft,
+    train_dataloaders=train_dataloader,
+    val_dataloaders=val_dataloader,
+)
 
 # %%
-print("Predictions (scaled):", predictions[:5])
-print("Actual (scaled):", y_test[:5])
-
-print("Predictions (rescaled):", predicted[:5])
-print("Actual (rescaled):", actual[:5])
-
+best_model_path = trainer.checkpoint_callback.best_model_path
+best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
 
 # %%
-predictions[:50]
-
-# %%
-print(data.describe())
+predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="gpu"))
+RMSE()(predictions.output, predictions.y)
+predictions_vs_actuals = best_tft.calculate_prediction_actual_by_variable(predictions.x, predictions.output)
+best_tft.plot_prediction_actual_by_variable(predictions_vs_actuals)
 
 
