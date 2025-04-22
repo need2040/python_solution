@@ -1,6 +1,0 @@
-init_beta: 0.5
-init_d: 0.5
-init_omega: 0.3
-init_phi: 0.5
-lr: 0.001
-truncation_size: 20
