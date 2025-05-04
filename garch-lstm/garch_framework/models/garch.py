@@ -6,7 +6,8 @@ class GARCHModel(BaseGARCHModel):
     def __init__(self, init_omega=0.2, init_alpha=0.2, init_beta=0.2):
         super().__init__()
         self.model = nn.Sequential(
-            nn.Linear(3, 1, bias=False))
+            nn.Linear(3, 1, bias=False)
+            )
         self._initialize_weights(init_omega, init_alpha, init_beta)
     
     def _initialize_weights(self, omega, alpha, beta):

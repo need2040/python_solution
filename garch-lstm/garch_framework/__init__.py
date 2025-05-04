@@ -1,16 +1,31 @@
-from .models import GARCHModel, FIGARCHModel, GJR_GARCHModel
+from .models import GARCHModel, FIGARCHModel, GJRGARCHModel
+from typing import List,Tuple, Union
 from .layers import CorrectedNLoss, CorrectedTLoss
 from .utils.datasets import GARCHDataset, FIGARCHDataset, GJRGARCHDataset
-from .utils.helpers import save_results
+from .utils.helpers import generate_ground_data, save_model_params, fit_figarch_parameters, compute_omega, compute_lambda_sequence
 
-__all__ = [
+__all__: List[str] = [
     'GARCHModel',
     'FIGARCHModel',
-    'GJR_GARCHModel',
+    'GJRGARCHModel',
     'CorrectedNLoss',
     'CorrectedTLoss',
     'GARCHDataset',
     'FIGARCHDataset',
     'GJRGARCHDataset',
-    'save_results',
+    'generate_ground_data',
+    'save_model_params',
+    'fit_figarch_parameters',
+    'compute_omega',
+    'compute_lambda_sequence'
 ]
+
+if __package__ or "." in __name__:
+    from .models import *
+    from .layers import *
+    from .utils import *
+else:
+    # Позволяет запускать файлы напрямую из папки модуля
+    from models import *
+    from layers import *
+    from utils import *

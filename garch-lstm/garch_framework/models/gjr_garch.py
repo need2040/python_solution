@@ -2,7 +2,7 @@ from .base import BaseGARCHModel
 import torch
 import torch.nn as nn
 
-class GJR_GARCHModel(BaseGARCHModel):
+class GJRGARCHModel(BaseGARCHModel):
     def __init__(self, init_omega=0.05, init_alpha=0.1, init_gamma = 0.15 , init_beta=0.7):
         super().__init__()
         self.model =nn.Sequential(

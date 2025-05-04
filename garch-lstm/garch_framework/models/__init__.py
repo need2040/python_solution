@@ -1,11 +1,11 @@
 from .base import BaseGARCHModel
 from .garch import GARCHModel
 from .figarch import FIGARCHModel
-from .gjr_garch import GJR_GARCHModel
+from .gjr_garch import GJRGARCHModel
 
 __all__ = [
     'BaseGARCHModel',
     'GARCHModel',
     'FIGARCHModel',
-    'GJR_GARCHModel',
+    'GJRGARCHModel',
 ]

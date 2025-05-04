@@ -9,4 +9,4 @@ class BaseGARCHModel(nn.Module):
         raise NotImplementedError
         
     def get_params(self):
-        return {k: v.detach().cpu().numpy() for k, v in self.state_dict().items()}
+        return torch.concatenate([v.detach().cpu().flatten() for v in self.state_dict().values()]).numpy()
