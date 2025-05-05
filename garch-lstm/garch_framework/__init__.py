@@ -1,4 +1,4 @@
-from .models import GARCHModel, FIGARCHModel, GJRGARCHModel
+from .models import GARCHModel, FIGARCHModel, GJRGARCHModel, LSTMGARCHModel
 from typing import List,Tuple, Union
 from .layers import CorrectedNLoss, CorrectedTLoss
 from .utils.datasets import GARCHDataset, FIGARCHDataset, GJRGARCHDataset
@@ -8,6 +8,7 @@ __all__: List[str] = [
     'GARCHModel',
     'FIGARCHModel',
     'GJRGARCHModel',
+    'LSTMGARCHModel',
     'CorrectedNLoss',
     'CorrectedTLoss',
     'GARCHDataset',
