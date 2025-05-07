@@ -35,9 +35,9 @@ class GARCHLSTM(BaseGARCHModel):
 
         f_t = torch.sigmoid(self.W_f(x) + self.U_f(sigma2_t_minus_1))  # [batch_size, hidden]
         i_t = torch.sigmoid(self.W_i(x) + self.U_i(sigma2_t_minus_1))
-        c̃_t = torch.tanh(self.W_c(x) + self.U_c(sigma2_t_minus_1))
+        c1_t = torch.tanh(self.W_c(x) + self.U_c(sigma2_t_minus_1))
 
-        c_t = f_t * c_t_minus_1 + i_t * c̃_t  # новое состояние памяти
+        c_t = f_t * c_t_minus_1 + i_t * c1_t  # новое состояние памяти
 
         # GARCH-ядро: отдельно обучаемый модуль
         garch_input = torch.cat([eps_t_minus_1, sigma2_t_minus_1], dim=1)
