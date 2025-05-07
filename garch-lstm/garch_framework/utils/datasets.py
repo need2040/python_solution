@@ -89,3 +89,33 @@ class GJRGARCHDataset(Dataset):
             self.inputs[index],
             self.residuals_scaled[index+1]
         )
+
+
+
+class LSTMGARCHDataset(Dataset):
+    def __init__(self, epsilons, sigmas, k=5, h=1, scale=100.0):
+        """
+        epsilons: [T] — серия ε_t
+        sigmas2: [T] — серия σ²_t
+        k: окно истории
+        h: горизонт прогноза
+        scale: множитель для масштабирования
+        """
+        assert len(epsilons) == len(sigmas), "длины ε и σ² должны совпадать"
+
+        self.epsilons = torch.tensor(epsilons, dtype=torch.float32) * scale
+        self.sigmas = torch.tensor(sigmas, dtype=torch.float32) * scale
+        self.k = k
+        self.h = h
+
+    def __len__(self):
+        return len(self.epsilons) - self.k - self.h + 1
+
+    def __getitem__(self, idx):
+        # окно из k значений ε: ε_{t-k+1}, ..., ε_t
+        eps_window = self.epsilons[idx:idx + self.k]  # shape: [k]
+
+        # target: σ²_{t + h}
+        sigma2_target = self.sigmas[idx + self.k + self.h - 1]  # scalar
+
+        return eps_window, sigma2_target
