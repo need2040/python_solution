@@ -24,25 +24,30 @@ class GARCHLSTM(BaseGARCHModel):
 
         self.hidden_size = hidden_size
 
-    def forward(self, eps_t_minus_1, sigma2_t_minus_1, c_t_minus_1):
+    def forward(self, eps_t_minus_1, sigma2_t_minus_1, c_t_minus_1, eps_window=None):
         """
-        eps_t_minus_1: [batch_size, 1] — ε_{t-1}
-        sigma2_t_minus_1: [batch_size, 1] — σ²_{t-1}
-        c_t_minus_1: [batch_size, hidden_size] — память из прошлого шага
+        eps_t_minus_1: [batch_size, 1]
+        sigma2_t_minus_1: [batch_size, 1]
+        c_t_minus_1: [batch_size, hidden_size]
+        eps_window: [batch_size, truncation_size] — только для FIGARCH
         """
 
         x = torch.cat([eps_t_minus_1, sigma2_t_minus_1], dim=1)  # [batch_size, 2]
 
-        f_t = torch.sigmoid(self.W_f(x) + self.U_f(sigma2_t_minus_1))  # [batch_size, hidden]
+        f_t = torch.sigmoid(self.W_f(x) + self.U_f(sigma2_t_minus_1))
         i_t = torch.sigmoid(self.W_i(x) + self.U_i(sigma2_t_minus_1))
         c1_t = torch.tanh(self.W_c(x) + self.U_c(sigma2_t_minus_1))
 
-        c_t = f_t * c_t_minus_1 + i_t * c1_t  # новое состояние памяти
+        c_t = f_t * c_t_minus_1 + i_t * c1_t
 
-        # GARCH-ядро: отдельно обучаемый модуль
-        garch_input = torch.cat([eps_t_minus_1, sigma2_t_minus_1], dim=1)
-        o_t = self.garch_core(garch_input).unsqueeze(1)  # [batch_size, 1]
+        # Вставка GARCH ядра
+        if isinstance(self.garch_core, FIGARCHModel):
+            garch_input = eps_window  # [batch_size, truncation_size]
+        else:
+            garch_input = x  # [batch_size, 2] или [batch_size, 4] для GJR
 
-        sigma2_t = o_t * (1 + self.w * torch.tanh(c_t).mean(dim=1, keepdim=True))  # [batch_size, 1]
+        o_t = self.garch_core(garch_input).unsqueeze(1)
+
+        sigma2_t = o_t * (1 + self.w * torch.tanh(c_t).mean(dim=1, keepdim=True))
 
         return sigma2_t, c_t

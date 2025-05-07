@@ -93,13 +93,14 @@ class GJRGARCHDataset(Dataset):
 
 
 class LSTMGARCHDataset(Dataset):
-    def __init__(self, epsilons, sigmas, k=5, h=1, scale=100.0):
+    def __init__(self, epsilons, sigmas, k=5, h=1, scale=100.0, mode='figarch'):
         """
         epsilons: [T] — серия ε_t
-        sigmas2: [T] — серия σ²_t
+        sigmas:   [T] — серия σ²_t
         k: окно истории
         h: горизонт прогноза
-        scale: множитель для масштабирования
+        scale: масштабирование (во избежание underflow)
+        mode: 'figarch' или 'garch' — какой тип ядра используется
         """
         assert len(epsilons) == len(sigmas), "длины ε и σ² должны совпадать"
 
@@ -107,15 +108,25 @@ class LSTMGARCHDataset(Dataset):
         self.sigmas = torch.tensor(sigmas, dtype=torch.float32) * scale
         self.k = k
         self.h = h
+        self.mode = mode.lower()
 
     def __len__(self):
         return len(self.epsilons) - self.k - self.h + 1
 
     def __getitem__(self, idx):
-        # окно из k значений ε: ε_{t-k+1}, ..., ε_t
-        eps_window = self.epsilons[idx:idx + self.k]  # shape: [k]
+        eps_window = self.epsilons[idx:idx + self.k]              # [k]
+        sigma_window = self.sigmas[idx:idx + self.k]              # [k]
+        sigma2_target = self.sigmas[idx + self.k + self.h - 1]    # scalar
 
-        # target: σ²_{t + h}
-        sigma2_target = self.sigmas[idx + self.k + self.h - 1]  # scalar
+        if self.mode == 'figarch':
+            return eps_window, sigma2_target
+        
+        
 
-        return eps_window, sigma2_target
+        elif self.mode in ['garch', 'gjrgarch']:
+            eps_t_minus_1 = eps_window[-1].unsqueeze(0)           # [1]
+            sigma2_t_minus_1 = sigma_window[-1].unsqueeze(0)      # [1]
+            return eps_t_minus_1, sigma2_t_minus_1, sigma2_target
+
+        else:
+            raise ValueError(f"Неизвестный режим: {self.mode}")
