@@ -31,18 +31,19 @@ class FIGARCHDataset(Dataset):
 
 
 class GARCHDataset(Dataset):
-    def __init__(self, residuals, volatility, scale=100):
+    def __init__(self, residuals, volatility, scale=100, oth_scale = 100):
         self.scale = scale
+        self.oth_scale = oth_scale
 
         self.residuals = torch.tensor(residuals, dtype=torch.float32)
         self.volatility = torch.tensor(volatility, dtype=torch.float32)
 
-        self.residuals_scaled = torch.square(self.residuals) * self.scale 
-        self.volatility_scaled = torch.square(self.volatility) * self.scale
+        self.residuals_scaled = torch.square(self.residuals) * self.scale
+        self.volatility_scaled = torch.square(self.volatility) * self.scale 
         
 
         self.inputs = torch.column_stack([
-            torch.ones_like(self.residuals_scaled)*self.scale,   # 
+            torch.ones_like(self.residuals_scaled)*self.oth_scale,   # 
             self.residuals_scaled,
             self.volatility_scaled
         ])
